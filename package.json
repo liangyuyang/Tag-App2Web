@@ -1,0 +1,40 @@
+{
+  "name": "zenmeasure-tag-monitor",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --config vite.config.mjs",
+    "build": "tsc -b && vite build --config vite.config.mjs",
+    "lint": "eslint .",
+    "preview": "node scripts/serve_dist.mjs",
+    "mqtt:ingest": "node scripts/mqtt_to_supabase.mjs",
+    "configure:dns": "node scripts/configure_cloudflare_dns.mjs",
+    "configure:auth-email": "node scripts/configure_supabase_auth_email.mjs",
+    "deploy:pages:api": "node scripts/deploy_cloudflare_pages.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.108.2",
+    "clsx": "2.1.1",
+    "hono": "4.12.26",
+    "lucide-react": "1.21.0",
+    "mqtt": "5.14.1",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "wrangler": "4.102.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.12.3",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.3",
+    "eslint": "10.3.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-react-refresh": "0.5.2",
+    "globals": "17.6.0",
+    "typescript": "6.0.2",
+    "typescript-eslint": "8.59.2",
+    "vite": "8.1.3"
+  }
+}

@@ -1,0 +1,17 @@
+dist
+node_modules
+.env
+.env.local
+.env.ingest
+.env.local.secrets
+.wrangler
+.git-real
+.git.blocked-empty
+.git-acl-before.txt
+.git-codex
+_codex_repo
+.dev.vars
+.npm-cache*
+.edge-profile-*
+qa-*.png
+npm-debug.log*
