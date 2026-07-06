@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto'
+import { hash as blake3Hash } from 'blake3-wasm'
 import { readdir, readFile } from 'node:fs/promises'
-import { join, relative, sep } from 'node:path'
+import { extname, join, relative, sep } from 'node:path'
 
 const accountId = process.env.CLOUDFLARE_ACCOUNT_ID ?? 'bc2ac4bad6f535fcde57fa10a22f131b'
 const projectName = process.env.CLOUDFLARE_PAGES_PROJECT ?? 'tag-app2web'
@@ -32,6 +32,40 @@ async function cf(path, options = {}) {
     throw new Error(`${options.method ?? 'GET'} ${path} failed: ${response.status} ${errors}`)
   }
   return payload
+}
+
+async function pagesAsset(path, jwt, body) {
+  const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+  const text = await response.text()
+  const payload = text ? JSON.parse(text) : {}
+  if (!response.ok || payload.success === false) {
+    const errors = payload.errors?.map((error) => error.message).join('; ') || text
+    throw new Error(`POST ${path} failed: ${response.status} ${errors}`)
+  }
+  return payload.result
+}
+
+function contentTypeFor(route) {
+  if (route.endsWith('.html')) return 'text/html; charset=utf-8'
+  if (route.endsWith('.js')) return 'application/javascript; charset=utf-8'
+  if (route.endsWith('.css')) return 'text/css; charset=utf-8'
+  if (route.endsWith('.svg')) return 'image/svg+xml'
+  if (route.endsWith('.png')) return 'image/png'
+  if (route.endsWith('.json')) return 'application/json; charset=utf-8'
+  return 'application/octet-stream'
+}
+
+function pagesHash(file, buffer) {
+  const base64Contents = buffer.toString('base64')
+  const extension = extname(file).slice(1)
+  return blake3Hash(base64Contents + extension).toString('hex').slice(0, 32)
 }
 
 async function listFiles(dir) {
@@ -68,18 +102,36 @@ async function deploy() {
 
   for (const file of files) {
     const buffer = await readFile(file)
-    const hash = createHash('sha256').update(buffer).digest('hex')
+    const hash = pagesHash(file, buffer)
     const route = `/${relative(distDir, file).split(sep).join('/')}`
     manifest[route] = hash
-    filePayloads.push({ file, route, hash, buffer })
+    filePayloads.push({ file, route, hash, buffer, contentType: contentTypeFor(route) })
   }
+
+  const uploadToken = await cf(`/accounts/${accountId}/pages/projects/${projectName}/upload-token`)
+  const jwt = uploadToken.result?.jwt
+  if (!jwt) throw new Error('Cloudflare Pages upload token response did not include a JWT.')
+
+  const missingHashes =
+    (await pagesAsset('/pages/assets/check-missing', jwt, { hashes: filePayloads.map((file) => file.hash) })) ?? []
+  const missing = filePayloads.filter((file) => missingHashes.includes(file.hash))
+  if (missing.length) {
+    await pagesAsset(
+      '/pages/assets/upload',
+      jwt,
+      missing.map((file) => ({
+        key: file.hash,
+        value: file.buffer.toString('base64'),
+        metadata: { contentType: file.contentType },
+        base64: true,
+      })),
+    )
+  }
+  await pagesAsset('/pages/assets/upsert-hashes', jwt, { hashes: filePayloads.map((file) => file.hash) })
 
   const form = new FormData()
   form.set('manifest', JSON.stringify(manifest))
   form.set('branch', 'main')
-  for (const file of filePayloads) {
-    form.set(file.hash, new Blob([file.buffer]), file.route)
-  }
 
   const deployment = await cf(`/accounts/${accountId}/pages/projects/${projectName}/deployments`, {
     method: 'POST',
@@ -109,6 +161,7 @@ async function deploy() {
         customDomain,
         domainStatus: domainResult?.result?.status ?? domainResult?.warning ?? 'unchanged',
         uploadedFiles: files.length,
+        newlyUploadedFiles: missing.length,
       },
       null,
       2,
