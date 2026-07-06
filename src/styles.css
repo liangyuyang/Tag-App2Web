@@ -226,10 +226,6 @@ button {
 }
 
 .table-head-wrap {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
   border-bottom: 1px solid var(--line);
   background: #fff;
 }
@@ -250,10 +246,10 @@ button {
 }
 
 .list-note {
-  padding-right: 14px;
+  display: block;
+  padding: 6px 14px 0;
   color: var(--muted);
   font-size: 11px;
-  white-space: nowrap;
 }
 
 .match-row {
@@ -275,6 +271,58 @@ button {
 .match-row small {
   margin-left: 8px;
   color: var(--muted);
+}
+
+.history-panel {
+  display: grid;
+  gap: 7px;
+}
+
+.history-title {
+  color: #2e3d36;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.history-list {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.history-row {
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--text);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  padding: 0 9px;
+  text-align: left;
+}
+
+.history-row span {
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.history-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.history-row em {
+  color: var(--warning);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
 }
 
 .temp,
@@ -347,21 +395,11 @@ button {
   font-size: 16px;
 }
 
-.tag-title input {
-  width: min(440px, 46vw);
-  min-width: 180px;
-  height: 30px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  padding: 0 8px;
-  color: var(--text);
-  font-weight: 650;
-  outline: 0;
-}
-
-.tag-title input:focus {
-  border-color: var(--line);
-  background: #fbfdfc;
+.tag-name {
+  min-width: 0;
+  color: #20342c;
+  font-size: 15px;
+  font-weight: 800;
 }
 
 .detail-header p {
@@ -723,13 +761,11 @@ button {
   }
 
   .table-head-wrap {
-    display: flex;
-    justify-content: flex-end;
     min-height: 28px;
   }
 
   .list-note {
-    padding: 0 12px;
+    padding: 7px 12px 0;
   }
 
   .match-row {
@@ -747,19 +783,17 @@ button {
     font-size: 12px;
   }
 
+  .history-list {
+    grid-template-columns: 1fr;
+  }
+
   .detail-header {
     display: grid;
     padding: 12px 12px 10px;
   }
 
   .tag-title {
-    display: grid;
-    grid-template-columns: auto auto 1fr auto;
-  }
-
-  .tag-title input {
-    width: 100%;
-    min-width: 0;
+    display: flex;
   }
 
   .toolbar {

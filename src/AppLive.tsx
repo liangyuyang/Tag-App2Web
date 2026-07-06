@@ -3,7 +3,6 @@
   CheckCircle2,
   ChevronRight,
   Download,
-  Edit3,
   FileText,
   Languages,
   LogOut,
@@ -22,7 +21,17 @@ import type { AllowlistEntry, LanguageCode, TagReading, TemperatureTag } from '.
 
 const internalDomains = ['miaomiaoce.com', 'zenmeasure.com', 'zenmeasure.space']
 const timeRanges = ['1h', '6h', '24h', '7d', '30d']
-const appVersion = 'v1.02_2026.07.06'
+const appVersion = 'v1.03_2026.07.06'
+const recentTagsStorageKey = 'zenmeasure-recent-tags'
+
+function readRecentTagIds() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(recentTagsStorageKey) ?? '[]')
+    return Array.isArray(parsed) ? parsed.map(String).slice(0, 6) : []
+  } catch {
+    return []
+  }
+}
 
 function formatTemperature(value: number) {
   return `${value.toFixed(1)} °C`
@@ -145,10 +154,15 @@ export default function AppLive() {
   const [loading, setLoading] = useState(false)
   const [savingTag, setSavingTag] = useState(false)
   const [saveOk, setSaveOk] = useState(false)
+  const [recentTagIds, setRecentTagIds] = useState<string[]>(readRecentTagIds)
 
   const isInternal = isInternalEmail(sessionEmail)
   const selectedTag = tags.find((tag) => tag.id === selectedTagId) ?? tags[0] ?? null
   const selectedReadings = useMemo(() => readings.filter((reading) => reading.tagId === selectedTag?.id), [readings, selectedTag])
+  const recentTags = useMemo(
+    () => recentTagIds.map((id) => tags.find((tag) => tag.id === id)).filter((tag): tag is TemperatureTag => Boolean(tag)),
+    [recentTagIds, tags],
+  )
   const matches = useMemo(() => {
     const normalized = query.trim().toLowerCase()
     const source = normalized
@@ -204,6 +218,13 @@ export default function AppLive() {
       const mapped = (data ?? []).map((row) => mapTag(row as Record<string, unknown>))
       setTags(mapped)
       const saved = window.localStorage.getItem('zenmeasure-recent-tag')
+      if (saved) {
+        setRecentTagIds((current) => {
+          const nextIds = [saved, ...current.filter((id) => id !== saved)].slice(0, 6)
+          window.localStorage.setItem(recentTagsStorageKey, JSON.stringify(nextIds))
+          return nextIds
+        })
+      }
       const next = mapped.find((tag) => tag.id === saved) ?? mapped[0]
       if (next) {
         setSelectedTagId(next.id)
@@ -260,6 +281,11 @@ export default function AppLive() {
     setSaveOk(false)
     setActiveView('table')
     window.localStorage.setItem('zenmeasure-recent-tag', tag.id)
+    setRecentTagIds((current) => {
+      const nextIds = [tag.id, ...current.filter((id) => id !== tag.id)].slice(0, 6)
+      window.localStorage.setItem(recentTagsStorageKey, JSON.stringify(nextIds))
+      return nextIds
+    })
   }
 
   async function sendMagicLink() {
@@ -437,6 +463,7 @@ export default function AppLive() {
           )}
         </div>
         <div className="match-panel">
+          {!query.trim() && <span className="list-note">只显示最后更新的6个标签</span>}
           <div className="table-head-wrap">
             <div className="table-head">
               <span>{t.tagId}</span>
@@ -445,8 +472,8 @@ export default function AppLive() {
               <span>{t.lastSeen}</span>
               <span>数据量</span>
               <span>开始时间</span>
+              <span />
             </div>
-            {!query.trim() && <span className="list-note">只显示最后更新的6个标签</span>}
           </div>
           {matches.map((tag) => (
             <button key={tag.id} type="button" className="match-row" onClick={() => selectTag(tag)}>
@@ -470,6 +497,20 @@ export default function AppLive() {
             </button>
           )}
         </div>
+        {recentTags.length > 0 && (
+          <div className="history-panel" aria-label="历史记录">
+            <div className="history-title">历史记录</div>
+            <div className="history-list">
+              {recentTags.map((tag) => (
+                <button key={tag.id} type="button" className="history-row" onClick={() => selectTag(tag)}>
+                  <span>{tag.shortCode}</span>
+                  <strong>{tag.notes || tag.nickname || tag.tagCode}</strong>
+                  <em>{formatTemperature(tag.latestTemperature)}</em>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       {selectedTag ? (
@@ -481,7 +522,6 @@ export default function AppLive() {
           isInternal={isInternal}
           language={language}
           lowLimitDraft={lowLimitDraft}
-          nicknameDraft={nicknameDraft}
           notesDraft={notesDraft}
           range={range}
           readings={selectedReadings}
@@ -493,7 +533,6 @@ export default function AppLive() {
           setActiveView={setActiveView}
           setHighLimitDraft={setHighLimitDraft}
           setLowLimitDraft={setLowLimitDraft}
-          setNicknameDraft={setNicknameDraft}
           setNotesDraft={setNotesDraft}
           setRange={setRange}
           t={t}
@@ -557,7 +596,6 @@ function TagDetail({
   isInternal,
   language,
   lowLimitDraft,
-  nicknameDraft,
   notesDraft,
   range,
   readings,
@@ -569,7 +607,6 @@ function TagDetail({
   setActiveView,
   setHighLimitDraft,
   setLowLimitDraft,
-  setNicknameDraft,
   setNotesDraft,
   setRange,
   t,
@@ -581,7 +618,6 @@ function TagDetail({
   isInternal: boolean
   language: LanguageCode
   lowLimitDraft: string
-  nicknameDraft: string
   notesDraft: string
   range: string
   readings: TagReading[]
@@ -593,7 +629,6 @@ function TagDetail({
   setActiveView: (view: 'table' | 'chart' | 'report' | 'config') => void
   setHighLimitDraft: (value: string) => void
   setLowLimitDraft: (value: string) => void
-  setNicknameDraft: (value: string) => void
   setNotesDraft: (value: string) => void
   setRange: (range: string) => void
   t: Record<string, string>
@@ -615,10 +650,7 @@ function TagDetail({
           <div className="tag-title">
             <span className={clsx('status-dot', selectedTag.status)} />
             <strong>{selectedTag.shortCode}</strong>
-            <input value={nicknameDraft} onChange={(event) => setNicknameDraft(event.target.value)} placeholder={t.nicknamePlaceholder} />
-            <button type="button" className="icon-button note-button" onClick={saveTagSettings} title="写备注" aria-label="写备注">
-              {saveOk ? <CheckCircle2 size={16} /> : <Edit3 size={15} />}
-            </button>
+            <span className="tag-name">{displayTagName(selectedTag)}</span>
           </div>
           {tagMeta(selectedTag) && <p>{tagMeta(selectedTag)}</p>}
         </div>
