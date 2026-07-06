@@ -21,7 +21,7 @@ import type { AllowlistEntry, LanguageCode, TagReading, TemperatureTag } from '.
 
 const internalDomains = ['miaomiaoce.com', 'zenmeasure.com', 'zenmeasure.space']
 const timeRanges = ['1h', '6h', '24h', '7d', '30d']
-const appVersion = 'v1.03_2026.07.06'
+const appVersion = 'v1.04_2026.07.06'
 const recentTagsStorageKey = 'zenmeasure-recent-tags'
 
 function readRecentTagIds() {
@@ -154,6 +154,7 @@ export default function AppLive() {
   const [loading, setLoading] = useState(false)
   const [savingTag, setSavingTag] = useState(false)
   const [saveOk, setSaveOk] = useState(false)
+  const [saveMessage, setSaveMessage] = useState('')
   const [recentTagIds, setRecentTagIds] = useState<string[]>(readRecentTagIds)
 
   const isInternal = isInternalEmail(sessionEmail)
@@ -279,6 +280,7 @@ export default function AppLive() {
     setSelectedTagId(tag.id)
     hydrateDrafts(tag)
     setSaveOk(false)
+    setSaveMessage('')
     setActiveView('table')
     window.localStorage.setItem('zenmeasure-recent-tag', tag.id)
     setRecentTagIds((current) => {
@@ -323,17 +325,17 @@ export default function AppLive() {
     if (!selectedTag) return
     setSavingTag(true)
     setSaveOk(false)
-    setNotice('')
+    setSaveMessage('')
     const highLimit = Number(highLimitDraft)
     const lowLimit = Number(lowLimitDraft)
     if (!Number.isFinite(highLimit) || !Number.isFinite(lowLimit)) {
       setSavingTag(false)
-      setNotice('阈值必须是数字。')
+      setSaveMessage('阈值必须是数字。')
       return
     }
     if (lowLimit >= highLimit) {
       setSavingTag(false)
-      setNotice('低温阈值必须低于高温阈值。')
+      setSaveMessage('低温阈值必须低于高温阈值。')
       return
     }
     const patch = {
@@ -346,7 +348,7 @@ export default function AppLive() {
     const { error } = await supabase.from('tags').update(patch).eq('id', selectedTag.id)
     if (error) {
       setSavingTag(false)
-      setNotice(error.message)
+      setSaveMessage(error.message)
       return
     }
     setTags((current) =>
@@ -356,8 +358,11 @@ export default function AppLive() {
     )
     setSavingTag(false)
     setSaveOk(true)
-    setNotice('已保存标签备注和阈值。')
-    window.setTimeout(() => setSaveOk(false), 2200)
+    setSaveMessage('已保存标签备注和阈值。')
+    window.setTimeout(() => {
+      setSaveOk(false)
+      setSaveMessage('')
+    }, 2200)
   }
 
   function exportPdf() {
@@ -528,6 +533,7 @@ export default function AppLive() {
           relativeLastSeen={relativeTime(selectedTag.lastSeenAt, language)}
           saveTagSettings={saveTagSettings}
           saveOk={saveOk}
+          saveMessage={saveMessage}
           savingTag={savingTag}
           selectedTag={selectedTag}
           setActiveView={setActiveView}
@@ -602,6 +608,7 @@ function TagDetail({
   relativeLastSeen,
   saveTagSettings,
   saveOk,
+  saveMessage,
   savingTag,
   selectedTag,
   setActiveView,
@@ -624,6 +631,7 @@ function TagDetail({
   relativeLastSeen: string
   saveTagSettings: () => void
   saveOk: boolean
+  saveMessage: string
   savingTag: boolean
   selectedTag: TemperatureTag
   setActiveView: (view: 'table' | 'chart' | 'report' | 'config') => void
@@ -722,6 +730,7 @@ function TagDetail({
               <button type="button" className="secondary-button" onClick={saveTagSettings}>
                 {savingTag ? '保存中' : saveOk ? '✓ 已保存' : '保存'}
               </button>
+              {saveMessage && <p className={clsx('save-message', saveOk && 'success')}>{saveMessage}</p>}
             </div>
             <RecordsTable readings={readings} language={language} labels={t} />
           </section>

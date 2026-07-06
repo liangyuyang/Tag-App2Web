@@ -286,7 +286,7 @@ button {
 
 .history-list {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 7px;
 }
 
@@ -683,6 +683,18 @@ button {
   margin-bottom: 10px;
 }
 
+.save-message {
+  grid-column: 4;
+  margin: 0;
+  color: var(--warning);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.save-message.success {
+  color: var(--brand-dark);
+}
+
 .tag-settings label {
   min-width: 0;
   display: grid;
@@ -863,7 +875,8 @@ button {
   }
 
   .tag-settings label:first-child,
-  .tag-settings .secondary-button {
+  .tag-settings .secondary-button,
+  .save-message {
     grid-column: 1 / -1;
   }
 
