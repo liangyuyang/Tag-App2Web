@@ -15,6 +15,8 @@ export type TemperatureTag = {
   battery: number | null
   rssi: number
   lastSeenAt: string
+  firstSeenAt: string | null
+  readingCount: number
   highLimit: number
   lowLimit: number
 }

@@ -142,6 +142,30 @@ async function upsertReading(topic, packet) {
     )
 
     if (readingError) throw new Error(readingError.message)
+    const { count, error: countError } = await supabase
+      .from('tag_readings')
+      .select('id', { count: 'exact', head: true })
+      .eq('tag_id', tag.id)
+    if (countError) throw new Error(countError.message)
+
+    const { data: firstReading, error: firstError } = await supabase
+      .from('tag_readings')
+      .select('recorded_at')
+      .eq('tag_id', tag.id)
+      .order('recorded_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (firstError) throw new Error(firstError.message)
+
+    const { error: statsError } = await supabase
+      .from('tags')
+      .update({
+        reading_count: count ?? 0,
+        first_seen_at: firstReading?.recorded_at ?? parsed.recordedAt.toISOString(),
+      })
+      .eq('id', tag.id)
+    if (statsError) throw new Error(statsError.message)
+
     saved += 1
   }
 

@@ -11,6 +11,7 @@
   Search,
   Settings,
   ShieldCheck,
+  X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
@@ -21,6 +22,7 @@ import type { AllowlistEntry, LanguageCode, TagReading, TemperatureTag } from '.
 
 const internalDomains = ['miaomiaoce.com', 'zenmeasure.com', 'zenmeasure.space']
 const timeRanges = ['1h', '6h', '24h', '7d', '30d']
+const appVersion = 'v1.02_2026.07.06'
 
 function formatTemperature(value: number) {
   return `${value.toFixed(1)} °C`
@@ -32,6 +34,41 @@ function formatBattery(value: number | null | undefined) {
 
 function formatSignal(value: number | null | undefined) {
   return value === null || value === undefined || !Number.isFinite(value) ? '-' : `${value} dBm`
+}
+
+function displayTagName(tag: TemperatureTag) {
+  return tag.nickname.trim() || tag.notes.trim() || tag.tagCode
+}
+
+function tagMeta(tag: TemperatureTag) {
+  return [tag.customer, tag.site, tag.tagCode].filter(Boolean).join(' / ')
+}
+
+function pdfText(language: LanguageCode) {
+  if (language === 'zh') {
+    return {
+      title: '无线温度标签报告',
+      tag: '标签',
+      notes: '备注',
+      temperature: '温度',
+      highLimit: '高温阈值',
+      lowLimit: '低温阈值',
+      battery: '电池电量',
+      time: '时间',
+      rssi: '信号强度',
+    }
+  }
+  return {
+    title: 'Wireless Temperature Tag Report',
+    tag: 'Tag',
+    notes: 'Notes',
+    temperature: 'Temperature',
+    highLimit: 'High limit',
+    lowLimit: 'Low limit',
+    battery: 'Battery',
+    time: 'Time',
+    rssi: 'Signal',
+  }
 }
 
 function emailDomain(email: string) {
@@ -60,7 +97,7 @@ function mapTag(row: Record<string, unknown>): TemperatureTag {
     id: String(row.id),
     tagCode: String(row.tag_code ?? ''),
     shortCode: String(row.short_code ?? String(row.tag_code ?? '').slice(-4)),
-    nickname: String(row.nickname ?? row.tag_code ?? ''),
+    nickname: String(row.nickname ?? ''),
     notes: String(row.notes ?? ''),
     customer: String(row.customer_name ?? ''),
     site: String(row.site_name ?? ''),
@@ -69,6 +106,8 @@ function mapTag(row: Record<string, unknown>): TemperatureTag {
     battery: row.battery_percent === null ? null : Number(row.battery_percent ?? 0),
     rssi: Number(row.rssi ?? 0),
     lastSeenAt: String(row.last_seen_at ?? new Date().toISOString()),
+    firstSeenAt: row.first_seen_at ? String(row.first_seen_at) : null,
+    readingCount: Number(row.reading_count ?? 0),
     highLimit: Number(row.high_limit ?? 8),
     lowLimit: Number(row.low_limit ?? -2),
   }
@@ -104,6 +143,8 @@ export default function AppLive() {
   const [range, setRange] = useState('24h')
   const [activeView, setActiveView] = useState<'table' | 'chart' | 'report' | 'config'>('table')
   const [loading, setLoading] = useState(false)
+  const [savingTag, setSavingTag] = useState(false)
+  const [saveOk, setSaveOk] = useState(false)
 
   const isInternal = isInternalEmail(sessionEmail)
   const selectedTag = tags.find((tag) => tag.id === selectedTagId) ?? tags[0] ?? null
@@ -112,7 +153,7 @@ export default function AppLive() {
     const normalized = query.trim().toLowerCase()
     const source = normalized
       ? tags.filter((tag) =>
-          [tag.shortCode, tag.tagCode, tag.nickname, tag.customer, tag.site].some((value) =>
+          [tag.shortCode, tag.tagCode, tag.nickname, tag.notes, tag.customer, tag.site].some((value) =>
             value.toLowerCase().includes(normalized),
           ),
         )
@@ -151,7 +192,7 @@ export default function AppLive() {
       const { data, error } = await supabase
         .from('tags')
         .select(
-          'id, tag_code, short_code, nickname, notes, customer_name, site_name, status, latest_temperature, battery_percent, rssi, last_seen_at, high_limit, low_limit',
+          'id, tag_code, short_code, nickname, notes, customer_name, site_name, status, latest_temperature, battery_percent, rssi, last_seen_at, first_seen_at, reading_count, high_limit, low_limit',
         )
         .order('last_seen_at', { ascending: false })
         .limit(200)
@@ -216,6 +257,7 @@ export default function AppLive() {
   function selectTag(tag: TemperatureTag) {
     setSelectedTagId(tag.id)
     hydrateDrafts(tag)
+    setSaveOk(false)
     setActiveView('table')
     window.localStorage.setItem('zenmeasure-recent-tag', tag.id)
   }
@@ -253,13 +295,18 @@ export default function AppLive() {
 
   async function saveTagSettings() {
     if (!selectedTag) return
+    setSavingTag(true)
+    setSaveOk(false)
+    setNotice('')
     const highLimit = Number(highLimitDraft)
     const lowLimit = Number(lowLimitDraft)
     if (!Number.isFinite(highLimit) || !Number.isFinite(lowLimit)) {
+      setSavingTag(false)
       setNotice('阈值必须是数字。')
       return
     }
     if (lowLimit >= highLimit) {
+      setSavingTag(false)
       setNotice('低温阈值必须低于高温阈值。')
       return
     }
@@ -272,6 +319,7 @@ export default function AppLive() {
     }
     const { error } = await supabase.from('tags').update(patch).eq('id', selectedTag.id)
     if (error) {
+      setSavingTag(false)
       setNotice(error.message)
       return
     }
@@ -280,33 +328,39 @@ export default function AppLive() {
         tag.id === selectedTag.id ? { ...tag, nickname: nicknameDraft, notes: notesDraft, highLimit, lowLimit } : tag,
       ),
     )
+    setSavingTag(false)
+    setSaveOk(true)
     setNotice('已保存标签备注和阈值。')
+    window.setTimeout(() => setSaveOk(false), 2200)
   }
 
   function exportPdf() {
     if (!selectedTag) return
+    const labels = pdfText(language)
+    const name = displayTagName(selectedTag)
+    const meta = tagMeta(selectedTag)
     const rows = selectedReadings
       .slice(0, 80)
       .map(
         (reading) => `<tr><td>${escapeHtml(new Date(reading.recordedAt).toLocaleString(language))}</td><td>${escapeHtml(formatTemperature(reading.temperature))}</td><td>${escapeHtml(formatSignal(reading.rssi))}</td><td>${escapeHtml(formatBattery(reading.battery))}</td></tr>`,
       )
       .join('')
-    const html = `<!doctype html><html><head><title>${escapeHtml(selectedTag.tagCode)} ZenMeasure Report</title><style>
-      body{font-family:Arial,sans-serif;color:#17221d;margin:40px}header{border-bottom:3px solid #0f7a62;padding-bottom:18px;margin-bottom:26px}
+    const html = `<!doctype html><html lang="${language === 'zh' ? 'zh-CN' : language}"><head><meta charset="UTF-8" /><title>${escapeHtml(selectedTag.tagCode)} ZenMeasure Report</title><style>
+      body{font-family:"Microsoft YaHei","Noto Sans CJK SC","PingFang SC",Arial,sans-serif;color:#17221d;margin:40px}header{border-bottom:3px solid #0f7a62;padding-bottom:18px;margin-bottom:26px}
       h1{color:#0f7a62;margin:0;font-size:30px}h2{margin:6px 0 0;font-size:16px;color:#45645a}
       .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:22px 0}.metric{border:1px solid #dfe8e4;border-radius:7px;padding:12px}
       .metric span{display:block;color:#64736d;font-size:12px;margin-bottom:6px}.metric strong{font-size:18px}table{width:100%;border-collapse:collapse;font-size:12px}
       th{text-align:left;background:#0f7a62;color:white;padding:9px}td{border-bottom:1px solid #dfe8e4;padding:8px 9px}footer{margin-top:28px;color:#64736d;font-size:11px}
       @media print{body{margin:18mm}button{display:none}}</style></head><body>
-      <header><h1>ZenMeasure</h1><h2>Wireless Temperature Tag Report</h2></header>
-      <h2>${escapeHtml(selectedTag.tagCode)} / ${escapeHtml(selectedTag.nickname)}</h2><p>${escapeHtml(selectedTag.customer)} / ${escapeHtml(selectedTag.site)}</p>
-      <section class="summary"><div class="metric"><span>${escapeHtml(t.temperature)}</span><strong>${escapeHtml(formatTemperature(selectedTag.latestTemperature))}</strong></div>
-      <div class="metric"><span>${escapeHtml(t.highLimit)}</span><strong>${selectedTag.highLimit} °C</strong></div><div class="metric"><span>${escapeHtml(t.lowLimit)}</span><strong>${selectedTag.lowLimit} °C</strong></div>
-      <div class="metric"><span>${escapeHtml(t.battery)}</span><strong>${escapeHtml(formatBattery(selectedTag.battery))}</strong></div></section>
-      ${selectedTag.notes ? `<p><strong>Notes:</strong> ${escapeHtml(selectedTag.notes)}</p>` : ''}
-      <table><thead><tr><th>${escapeHtml(t.time)}</th><th>${escapeHtml(t.temperature)}</th><th>${escapeHtml(t.rssi)}</th><th>${escapeHtml(t.battery)}</th></tr></thead><tbody>${rows}</tbody></table>
+      <header><h1>ZenMeasure</h1><h2>${escapeHtml(labels.title)}</h2></header>
+      <h2>${escapeHtml(labels.tag)}: ${escapeHtml(selectedTag.tagCode)}${name !== selectedTag.tagCode ? ` / ${escapeHtml(name)}` : ''}</h2>${meta ? `<p>${escapeHtml(meta)}</p>` : ''}
+      <section class="summary"><div class="metric"><span>${escapeHtml(labels.temperature)}</span><strong>${escapeHtml(formatTemperature(selectedTag.latestTemperature))}</strong></div>
+      <div class="metric"><span>${escapeHtml(labels.highLimit)}</span><strong>${selectedTag.highLimit} °C</strong></div><div class="metric"><span>${escapeHtml(labels.lowLimit)}</span><strong>${selectedTag.lowLimit} °C</strong></div>
+      <div class="metric"><span>${escapeHtml(labels.battery)}</span><strong>${escapeHtml(formatBattery(selectedTag.battery))}</strong></div></section>
+      ${selectedTag.notes ? `<p><strong>${escapeHtml(labels.notes)}:</strong> ${escapeHtml(selectedTag.notes)}</p>` : ''}
+      <table><thead><tr><th>${escapeHtml(labels.time)}</th><th>${escapeHtml(labels.temperature)}</th><th>${escapeHtml(labels.rssi)}</th><th>${escapeHtml(labels.battery)}</th></tr></thead><tbody>${rows}</tbody></table>
       <footer>ZenMeasure / 秒秒测 · ${new Date().toLocaleString(language)}</footer><script>window.onload=()=>setTimeout(()=>window.print(),300)</script></body></html>`
-    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
+    const url = URL.createObjectURL(new Blob([`\uFEFF${html}`], { type: 'text/html;charset=utf-8' }))
     const report = window.open(url, '_blank', 'width=900,height=1100')
     if (!report) {
       setNotice('浏览器阻止了弹出窗口，请允许本站弹窗后再导出。')
@@ -347,6 +401,7 @@ export default function AppLive() {
       <header className="top-actions">
         <BrandLogo />
         <div className="top-actions-right">
+          <span className="version-pill">{appVersion}</span>
           <LanguageSwitch language={language} setLanguage={setLanguage} />
           {isInternal && (
             <button type="button" className="ghost-button" onClick={() => setActiveView('config')}>
@@ -367,14 +422,31 @@ export default function AppLive() {
         <p>{t.appSubtitle}</p>
         <div className="search-box">
           <Search size={21} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.dashboardHint} />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setQuery('')
+            }}
+            placeholder={t.dashboardHint}
+          />
+          {query && (
+            <button type="button" className="clear-search" onClick={() => setQuery('')} aria-label="清空搜索">
+              <X size={16} />
+            </button>
+          )}
         </div>
         <div className="match-panel">
-          <div className="table-head">
-            <span>{t.tagId}</span>
-            <span>{t.temperature}</span>
-            <span>{t.lastSeen}</span>
-            <span>{t.customerSite}</span>
+          <div className="table-head-wrap">
+            <div className="table-head">
+              <span>{t.tagId}</span>
+              <span>备注</span>
+              <span>{t.temperature}</span>
+              <span>{t.lastSeen}</span>
+              <span>数据量</span>
+              <span>开始时间</span>
+            </div>
+            {!query.trim() && <span className="list-note">只显示最后更新的6个标签</span>}
           </div>
           {matches.map((tag) => (
             <button key={tag.id} type="button" className="match-row" onClick={() => selectTag(tag)}>
@@ -382,9 +454,11 @@ export default function AppLive() {
                 <strong>{tag.tagCode}</strong>
                 <small>({tag.shortCode})</small>
               </span>
+              <span>{tag.notes || tag.nickname || '-'}</span>
               <strong className={clsx('temp', tag.status)}>{formatTemperature(tag.latestTemperature)}</strong>
               <span>{relativeTime(tag.lastSeenAt, language)}</span>
-              <span>{tag.customer} / {tag.site}</span>
+              <span>{tag.readingCount}</span>
+              <span>{tag.firstSeenAt ? new Date(tag.firstSeenAt).toLocaleString(language) : '-'}</span>
               <ChevronRight size={16} />
             </button>
           ))}
@@ -413,6 +487,8 @@ export default function AppLive() {
           readings={selectedReadings}
           relativeLastSeen={relativeTime(selectedTag.lastSeenAt, language)}
           saveTagSettings={saveTagSettings}
+          saveOk={saveOk}
+          savingTag={savingTag}
           selectedTag={selectedTag}
           setActiveView={setActiveView}
           setHighLimitDraft={setHighLimitDraft}
@@ -487,6 +563,8 @@ function TagDetail({
   readings,
   relativeLastSeen,
   saveTagSettings,
+  saveOk,
+  savingTag,
   selectedTag,
   setActiveView,
   setHighLimitDraft,
@@ -509,6 +587,8 @@ function TagDetail({
   readings: TagReading[]
   relativeLastSeen: string
   saveTagSettings: () => void
+  saveOk: boolean
+  savingTag: boolean
   selectedTag: TemperatureTag
   setActiveView: (view: 'table' | 'chart' | 'report' | 'config') => void
   setHighLimitDraft: (value: string) => void
@@ -536,11 +616,11 @@ function TagDetail({
             <span className={clsx('status-dot', selectedTag.status)} />
             <strong>{selectedTag.shortCode}</strong>
             <input value={nicknameDraft} onChange={(event) => setNicknameDraft(event.target.value)} placeholder={t.nicknamePlaceholder} />
-            <button type="button" className="icon-button" onClick={saveTagSettings} title="保存">
-              <Edit3 size={15} />
+            <button type="button" className="icon-button note-button" onClick={saveTagSettings} title="写备注" aria-label="写备注">
+              {saveOk ? <CheckCircle2 size={16} /> : <Edit3 size={15} />}
             </button>
           </div>
-          <p>{selectedTag.customer} / {selectedTag.site} · {selectedTag.tagCode}</p>
+          {tagMeta(selectedTag) && <p>{tagMeta(selectedTag)}</p>}
         </div>
         <div className="toolbar">
           <div className="range-control" aria-label={t.timeRange}>
@@ -597,7 +677,7 @@ function TagDetail({
             <div className="tag-settings">
               <label>
                 <span>备注</span>
-                <input value={notesDraft} onChange={(event) => setNotesDraft(event.target.value)} placeholder="例如：随身测试独角兽2" />
+                <input value={notesDraft} onChange={(event) => setNotesDraft(event.target.value)} placeholder="例如：京NED666的车厘子" />
               </label>
               <label>
                 <span>{t.lowLimit}</span>
@@ -608,7 +688,7 @@ function TagDetail({
                 <input inputMode="decimal" value={highLimitDraft} onChange={(event) => setHighLimitDraft(event.target.value)} />
               </label>
               <button type="button" className="secondary-button" onClick={saveTagSettings}>
-                保存
+                {savingTag ? '保存中' : saveOk ? '✓ 已保存' : '保存'}
               </button>
             </div>
             <RecordsTable readings={readings} language={language} labels={t} />

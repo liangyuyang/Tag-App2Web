@@ -58,6 +58,13 @@ button {
   justify-content: flex-end;
 }
 
+.version-pill {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
 .brand-logo {
   width: 92px;
   height: 86px;
@@ -120,6 +127,10 @@ button {
 .icon-button {
   width: 34px;
   padding: 0;
+}
+
+.note-button svg {
+  color: var(--brand);
 }
 
 .brand {
@@ -190,6 +201,22 @@ button {
   font-size: 13px;
 }
 
+.clear-search {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  background: #edf5f1;
+  color: var(--muted);
+}
+
+.clear-search:hover {
+  background: #dcece5;
+  color: var(--brand-dark);
+}
+
 .match-panel {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -198,10 +225,19 @@ button {
   box-shadow: 0 18px 70px rgba(20, 36, 30, 0.08);
 }
 
+.table-head-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
 .table-head,
 .match-row {
   display: grid;
-  grid-template-columns: 1.4fr 0.7fr 0.8fr 1.3fr 24px;
+  grid-template-columns: 1.08fr 1fr 0.58fr 0.72fr 0.52fr 1.05fr 24px;
   align-items: center;
   gap: 10px;
 }
@@ -211,7 +247,13 @@ button {
   color: #7a8983;
   font-size: 11px;
   font-weight: 700;
-  border-bottom: 1px solid var(--line);
+}
+
+.list-note {
+  padding-right: 14px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .match-row {
@@ -622,6 +664,11 @@ button {
   outline: 0;
 }
 
+.tag-settings input::placeholder {
+  color: #9aa8a2;
+  font-weight: 400;
+}
+
 .tag-settings input:focus {
   border-color: var(--brand);
   box-shadow: 0 0 0 3px rgba(15, 122, 98, 0.1);
@@ -675,14 +722,26 @@ button {
     display: none;
   }
 
+  .table-head-wrap {
+    display: flex;
+    justify-content: flex-end;
+    min-height: 28px;
+  }
+
+  .list-note {
+    padding: 0 12px;
+  }
+
   .match-row {
     grid-template-columns: 1fr auto;
     gap: 8px;
     min-height: 46px;
   }
 
-  .match-row span:nth-child(3),
-  .match-row span:nth-child(4) {
+  .match-row span:nth-child(2),
+  .match-row span:nth-child(4),
+  .match-row span:nth-child(5),
+  .match-row span:nth-child(6) {
     grid-column: 1 / -1;
     color: var(--muted);
     font-size: 12px;

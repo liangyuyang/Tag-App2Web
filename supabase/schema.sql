@@ -15,6 +15,8 @@ create table if not exists public.tags (
   latest_humidity numeric(7, 2),
   battery_percent numeric(5, 2),
   rssi integer,
+  first_seen_at timestamptz,
+  reading_count integer not null default 0,
   high_limit numeric(7, 2) not null default 8,
   low_limit numeric(7, 2) not null default -2,
   last_seen_at timestamptz,
@@ -23,6 +25,8 @@ create table if not exists public.tags (
 );
 
 alter table public.tags add column if not exists notes text not null default '';
+alter table public.tags add column if not exists first_seen_at timestamptz;
+alter table public.tags add column if not exists reading_count integer not null default 0;
 
 create table if not exists public.tag_readings (
   id uuid primary key default gen_random_uuid(),
@@ -37,6 +41,21 @@ create table if not exists public.tag_readings (
   created_at timestamptz not null default now(),
   unique (tag_id, recorded_at)
 );
+
+update public.tags as tag
+set
+  first_seen_at = stats.first_seen_at,
+  reading_count = stats.reading_count,
+  updated_at = now()
+from (
+  select
+    tag_id,
+    min(recorded_at) as first_seen_at,
+    count(*)::integer as reading_count
+  from public.tag_readings
+  group by tag_id
+) as stats
+where tag.id = stats.tag_id;
 
 create table if not exists public.customer_email_allowlist (
   id uuid primary key default gen_random_uuid(),
