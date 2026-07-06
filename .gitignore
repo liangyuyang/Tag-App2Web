@@ -10,6 +10,7 @@ node_modules
 .git-acl-before.txt
 .git-codex
 _codex_repo
+_write_test.txt
 .dev.vars
 .npm-cache*
 .edge-profile-*

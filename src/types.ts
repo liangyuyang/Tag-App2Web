@@ -7,11 +7,12 @@ export type TemperatureTag = {
   tagCode: string
   shortCode: string
   nickname: string
+  notes: string
   customer: string
   site: string
   status: TagStatus
   latestTemperature: number
-  battery: number
+  battery: number | null
   rssi: number
   lastSeenAt: string
   highLimit: number

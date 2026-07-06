@@ -7,6 +7,7 @@ create table if not exists public.tags (
   tag_code text not null unique,
   short_code text generated always as (right(regexp_replace(tag_code, '[^0-9A-Za-z]', '', 'g'), 4)) stored,
   nickname text,
+  notes text not null default '',
   customer_name text not null default '',
   site_name text not null default '',
   status text not null default 'normal' check (status in ('normal', 'warning', 'offline')),
@@ -20,6 +21,8 @@ create table if not exists public.tags (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.tags add column if not exists notes text not null default '';
 
 create table if not exists public.tag_readings (
   id uuid primary key default gen_random_uuid(),

@@ -584,6 +584,49 @@ button {
   font-weight: 750;
 }
 
+.app-notice {
+  width: min(840px, 100%);
+  margin: 6px auto 8px;
+  border: 1px solid #cfe5dc;
+  border-radius: 7px;
+  background: #f2fbf7;
+  color: var(--brand-dark);
+  padding: 8px 12px;
+  font-weight: 750;
+}
+
+.tag-settings {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 100px 100px auto;
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 10px;
+}
+
+.tag-settings label {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.tag-settings input {
+  min-width: 0;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 9px;
+  color: var(--text);
+  outline: 0;
+}
+
+.tag-settings input:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(15, 122, 98, 0.1);
+}
+
 @media (max-width: 920px) {
   .app-shell {
     padding: 10px 12px 28px;
@@ -720,6 +763,15 @@ button {
   .config-pane {
     padding: 10px 12px;
     border-right: 0;
+  }
+
+  .tag-settings {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tag-settings label:first-child,
+  .tag-settings .secondary-button {
+    grid-column: 1 / -1;
   }
 
   .mobile-hidden {

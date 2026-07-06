@@ -26,6 +26,14 @@ function formatTemperature(value: number) {
   return `${value.toFixed(1)} °C`
 }
 
+function formatBattery(value: number | null | undefined) {
+  return value === null || value === undefined || !Number.isFinite(value) ? '-' : `${value}%`
+}
+
+function formatSignal(value: number | null | undefined) {
+  return value === null || value === undefined || !Number.isFinite(value) ? '-' : `${value} dBm`
+}
+
 function emailDomain(email: string) {
   return email.trim().toLowerCase().split('@')[1] ?? ''
 }
@@ -53,11 +61,12 @@ function mapTag(row: Record<string, unknown>): TemperatureTag {
     tagCode: String(row.tag_code ?? ''),
     shortCode: String(row.short_code ?? String(row.tag_code ?? '').slice(-4)),
     nickname: String(row.nickname ?? row.tag_code ?? ''),
+    notes: String(row.notes ?? ''),
     customer: String(row.customer_name ?? ''),
     site: String(row.site_name ?? ''),
     status: (row.status as TemperatureTag['status']) ?? 'normal',
     latestTemperature: Number(row.latest_temperature ?? 0),
-    battery: Number(row.battery_percent ?? 0),
+    battery: row.battery_percent === null ? null : Number(row.battery_percent ?? 0),
     rssi: Number(row.rssi ?? 0),
     lastSeenAt: String(row.last_seen_at ?? new Date().toISOString()),
     highLimit: Number(row.high_limit ?? 8),
@@ -89,6 +98,9 @@ export default function AppLive() {
   const [query, setQuery] = useState('')
   const [selectedTagId, setSelectedTagId] = useState('')
   const [nicknameDraft, setNicknameDraft] = useState('')
+  const [notesDraft, setNotesDraft] = useState('')
+  const [highLimitDraft, setHighLimitDraft] = useState('8')
+  const [lowLimitDraft, setLowLimitDraft] = useState('-2')
   const [range, setRange] = useState('24h')
   const [activeView, setActiveView] = useState<'table' | 'chart' | 'report' | 'config'>('table')
   const [loading, setLoading] = useState(false)
@@ -105,13 +117,20 @@ export default function AppLive() {
           ),
         )
       : tags
-    return source.slice(0, 10)
+    return source.slice(0, normalized ? 10 : 6)
   }, [query, tags])
 
   useEffect(() => {
     window.localStorage.setItem('zenmeasure-language', language)
     document.documentElement.lang = language === 'zh' ? 'zh-CN' : language
   }, [language])
+
+  function hydrateDrafts(tag: TemperatureTag) {
+    setNicknameDraft(tag.nickname)
+    setNotesDraft(tag.notes)
+    setHighLimitDraft(String(tag.highLimit))
+    setLowLimitDraft(String(tag.lowLimit))
+  }
 
   useEffect(() => {
     async function hydrateSession() {
@@ -132,7 +151,7 @@ export default function AppLive() {
       const { data, error } = await supabase
         .from('tags')
         .select(
-          'id, tag_code, short_code, nickname, customer_name, site_name, status, latest_temperature, battery_percent, rssi, last_seen_at, high_limit, low_limit',
+          'id, tag_code, short_code, nickname, notes, customer_name, site_name, status, latest_temperature, battery_percent, rssi, last_seen_at, high_limit, low_limit',
         )
         .order('last_seen_at', { ascending: false })
         .limit(200)
@@ -147,7 +166,7 @@ export default function AppLive() {
       const next = mapped.find((tag) => tag.id === saved) ?? mapped[0]
       if (next) {
         setSelectedTagId(next.id)
-        setNicknameDraft(next.nickname)
+        hydrateDrafts(next)
       }
     }
     void loadTags()
@@ -196,7 +215,7 @@ export default function AppLive() {
 
   function selectTag(tag: TemperatureTag) {
     setSelectedTagId(tag.id)
-    setNicknameDraft(tag.nickname)
+    hydrateDrafts(tag)
     setActiveView('table')
     window.localStorage.setItem('zenmeasure-recent-tag', tag.id)
   }
@@ -232,23 +251,47 @@ export default function AppLive() {
     setSessionEmail('')
   }
 
-  function saveNickname() {
+  async function saveTagSettings() {
     if (!selectedTag) return
-    setTags((current) => current.map((tag) => (tag.id === selectedTag.id ? { ...tag, nickname: nicknameDraft } : tag)))
-    void supabase.from('tags').update({ nickname: nicknameDraft }).eq('id', selectedTag.id)
+    const highLimit = Number(highLimitDraft)
+    const lowLimit = Number(lowLimitDraft)
+    if (!Number.isFinite(highLimit) || !Number.isFinite(lowLimit)) {
+      setNotice('阈值必须是数字。')
+      return
+    }
+    if (lowLimit >= highLimit) {
+      setNotice('低温阈值必须低于高温阈值。')
+      return
+    }
+    const patch = {
+      nickname: nicknameDraft,
+      notes: notesDraft,
+      high_limit: highLimit,
+      low_limit: lowLimit,
+      updated_at: new Date().toISOString(),
+    }
+    const { error } = await supabase.from('tags').update(patch).eq('id', selectedTag.id)
+    if (error) {
+      setNotice(error.message)
+      return
+    }
+    setTags((current) =>
+      current.map((tag) =>
+        tag.id === selectedTag.id ? { ...tag, nickname: nicknameDraft, notes: notesDraft, highLimit, lowLimit } : tag,
+      ),
+    )
+    setNotice('已保存标签备注和阈值。')
   }
 
   function exportPdf() {
     if (!selectedTag) return
-    const report = window.open('', '_blank', 'noopener,noreferrer,width=900,height=1100')
-    if (!report) return
     const rows = selectedReadings
       .slice(0, 80)
       .map(
-        (reading) => `<tr><td>${escapeHtml(new Date(reading.recordedAt).toLocaleString(language))}</td><td>${escapeHtml(formatTemperature(reading.temperature))}</td><td>${escapeHtml(`${reading.rssi ?? ''} dBm`)}</td><td>${escapeHtml(`${reading.battery ?? ''}%`)}</td></tr>`,
+        (reading) => `<tr><td>${escapeHtml(new Date(reading.recordedAt).toLocaleString(language))}</td><td>${escapeHtml(formatTemperature(reading.temperature))}</td><td>${escapeHtml(formatSignal(reading.rssi))}</td><td>${escapeHtml(formatBattery(reading.battery))}</td></tr>`,
       )
       .join('')
-    report.document.write(`<!doctype html><html><head><title>${escapeHtml(selectedTag.tagCode)} ZenMeasure Report</title><style>
+    const html = `<!doctype html><html><head><title>${escapeHtml(selectedTag.tagCode)} ZenMeasure Report</title><style>
       body{font-family:Arial,sans-serif;color:#17221d;margin:40px}header{border-bottom:3px solid #0f7a62;padding-bottom:18px;margin-bottom:26px}
       h1{color:#0f7a62;margin:0;font-size:30px}h2{margin:6px 0 0;font-size:16px;color:#45645a}
       .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:22px 0}.metric{border:1px solid #dfe8e4;border-radius:7px;padding:12px}
@@ -259,10 +302,18 @@ export default function AppLive() {
       <h2>${escapeHtml(selectedTag.tagCode)} / ${escapeHtml(selectedTag.nickname)}</h2><p>${escapeHtml(selectedTag.customer)} / ${escapeHtml(selectedTag.site)}</p>
       <section class="summary"><div class="metric"><span>${escapeHtml(t.temperature)}</span><strong>${escapeHtml(formatTemperature(selectedTag.latestTemperature))}</strong></div>
       <div class="metric"><span>${escapeHtml(t.highLimit)}</span><strong>${selectedTag.highLimit} °C</strong></div><div class="metric"><span>${escapeHtml(t.lowLimit)}</span><strong>${selectedTag.lowLimit} °C</strong></div>
-      <div class="metric"><span>${escapeHtml(t.battery)}</span><strong>${selectedTag.battery}%</strong></div></section>
+      <div class="metric"><span>${escapeHtml(t.battery)}</span><strong>${escapeHtml(formatBattery(selectedTag.battery))}</strong></div></section>
+      ${selectedTag.notes ? `<p><strong>Notes:</strong> ${escapeHtml(selectedTag.notes)}</p>` : ''}
       <table><thead><tr><th>${escapeHtml(t.time)}</th><th>${escapeHtml(t.temperature)}</th><th>${escapeHtml(t.rssi)}</th><th>${escapeHtml(t.battery)}</th></tr></thead><tbody>${rows}</tbody></table>
-      <footer>ZenMeasure / 秒秒测 · ${new Date().toLocaleString(language)}</footer><script>window.onload=()=>setTimeout(()=>window.print(),200)</script></body></html>`)
-    report.document.close()
+      <footer>ZenMeasure / 秒秒测 · ${new Date().toLocaleString(language)}</footer><script>window.onload=()=>setTimeout(()=>window.print(),300)</script></body></html>`
+    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
+    const report = window.open(url, '_blank', 'width=900,height=1100')
+    if (!report) {
+      setNotice('浏览器阻止了弹出窗口，请允许本站弹窗后再导出。')
+      URL.revokeObjectURL(url)
+      return
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
   }
 
   if (!hasSupabaseConfig) {
@@ -310,6 +361,8 @@ export default function AppLive() {
         </div>
       </header>
 
+      {notice && <div className="app-notice">{notice}</div>}
+
       <section className="search-hero compact-hero">
         <p>{t.appSubtitle}</p>
         <div className="search-box">
@@ -350,16 +403,22 @@ export default function AppLive() {
           activeView={activeView}
           allowlist={allowlist}
           exportPdf={exportPdf}
+          highLimitDraft={highLimitDraft}
           isInternal={isInternal}
           language={language}
+          lowLimitDraft={lowLimitDraft}
           nicknameDraft={nicknameDraft}
+          notesDraft={notesDraft}
           range={range}
           readings={selectedReadings}
           relativeLastSeen={relativeTime(selectedTag.lastSeenAt, language)}
-          saveNickname={saveNickname}
+          saveTagSettings={saveTagSettings}
           selectedTag={selectedTag}
           setActiveView={setActiveView}
+          setHighLimitDraft={setHighLimitDraft}
+          setLowLimitDraft={setLowLimitDraft}
           setNicknameDraft={setNicknameDraft}
+          setNotesDraft={setNotesDraft}
           setRange={setRange}
           t={t}
         />
@@ -418,32 +477,44 @@ function TagDetail({
   activeView,
   allowlist,
   exportPdf,
+  highLimitDraft,
   isInternal,
   language,
+  lowLimitDraft,
   nicknameDraft,
+  notesDraft,
   range,
   readings,
   relativeLastSeen,
-  saveNickname,
+  saveTagSettings,
   selectedTag,
   setActiveView,
+  setHighLimitDraft,
+  setLowLimitDraft,
   setNicknameDraft,
+  setNotesDraft,
   setRange,
   t,
 }: {
   activeView: 'table' | 'chart' | 'report' | 'config'
   allowlist: AllowlistEntry[]
   exportPdf: () => void
+  highLimitDraft: string
   isInternal: boolean
   language: LanguageCode
+  lowLimitDraft: string
   nicknameDraft: string
+  notesDraft: string
   range: string
   readings: TagReading[]
   relativeLastSeen: string
-  saveNickname: () => void
+  saveTagSettings: () => void
   selectedTag: TemperatureTag
   setActiveView: (view: 'table' | 'chart' | 'report' | 'config') => void
+  setHighLimitDraft: (value: string) => void
+  setLowLimitDraft: (value: string) => void
   setNicknameDraft: (value: string) => void
+  setNotesDraft: (value: string) => void
   setRange: (range: string) => void
   t: Record<string, string>
 }) {
@@ -465,7 +536,7 @@ function TagDetail({
             <span className={clsx('status-dot', selectedTag.status)} />
             <strong>{selectedTag.shortCode}</strong>
             <input value={nicknameDraft} onChange={(event) => setNicknameDraft(event.target.value)} placeholder={t.nicknamePlaceholder} />
-            <button type="button" className="icon-button" onClick={saveNickname} title={t.nickname}>
+            <button type="button" className="icon-button" onClick={saveTagSettings} title="保存">
               <Edit3 size={15} />
             </button>
           </div>
@@ -503,8 +574,8 @@ function TagDetail({
       <div className="metric-row">
         <Metric label={t.temperature} value={formatTemperature(selectedTag.latestTemperature)} tone={selectedTag.status} />
         <Metric label={t.lastSeen} value={relativeLastSeen} />
-        <Metric label={t.battery} value={`${selectedTag.battery}%`} />
-        <Metric label={t.rssi} value={`${selectedTag.rssi} dBm`} />
+        <Metric label={t.battery} value={formatBattery(selectedTag.battery)} />
+        <Metric label={t.rssi} value={formatSignal(selectedTag.rssi)} />
       </div>
 
       {activeView === 'config' && isInternal ? (
@@ -523,6 +594,23 @@ function TagDetail({
       ) : (
         <div className="detail-grid">
           <section className={clsx('records-pane', activeView !== 'table' && 'mobile-hidden')}>
+            <div className="tag-settings">
+              <label>
+                <span>备注</span>
+                <input value={notesDraft} onChange={(event) => setNotesDraft(event.target.value)} placeholder="例如：随身测试独角兽2" />
+              </label>
+              <label>
+                <span>{t.lowLimit}</span>
+                <input inputMode="decimal" value={lowLimitDraft} onChange={(event) => setLowLimitDraft(event.target.value)} />
+              </label>
+              <label>
+                <span>{t.highLimit}</span>
+                <input inputMode="decimal" value={highLimitDraft} onChange={(event) => setHighLimitDraft(event.target.value)} />
+              </label>
+              <button type="button" className="secondary-button" onClick={saveTagSettings}>
+                保存
+              </button>
+            </div>
             <RecordsTable readings={readings} language={language} labels={t} />
           </section>
           <section className={clsx('chart-pane', activeView !== 'chart' && 'mobile-hidden')}>
@@ -567,8 +655,8 @@ function RecordsTable({ readings, language, labels }: { readings: TagReading[]; 
         <div className="record-row" key={reading.id}>
           <span>{new Date(reading.recordedAt).toLocaleString(language)}</span>
           <strong>{formatTemperature(reading.temperature)}</strong>
-          <span>{reading.rssi ?? '-'} dBm</span>
-          <span>{reading.battery ?? '-'}%</span>
+          <span>{formatSignal(reading.rssi)}</span>
+          <span>{formatBattery(reading.battery)}</span>
         </div>
       ))}
       <div className="pagination">1-{Math.min(readings.length, 16)} / {readings.length}</div>
